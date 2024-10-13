@@ -3,37 +3,246 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Paragraph in a Box</title>
+    <title>Water Distribution Optimization</title>
+    <link rel="stylesheet" href="styles.css" />
     <style>
       body {
         font-family: Arial, sans-serif;
-        display: flex;
-        justify-content: center;
-        align-items: center;
-        height: 100vh;
-        margin: 0;
-        background-color: #f4f4f4;
+        text-align: center;
       }
-      .box {
-        width: 60%;
-        padding: 20px;
-        border: 2px solid #333;
-        background-color: #fff;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        border-radius: 8px;
+
+      #grid-container {
+        display: grid;
+        grid-template-columns: repeat(10, 40px); /* Adjust based on grid size */
+        grid-template-rows: repeat(10, 40px);
+        gap: 5px;
+        justify-content: center;
+        margin-top: 20px;
+      }
+
+      .grid-box {
+        width: 40px;
+        height: 40px;
+        border: 1px solid #999;
+      }
+
+      .pipe {
+        background-color: lightblue;
+      }
+
+      .no-pipe {
+        background-color: white;
+      }
+
+      .path {
+        background-color: green;
+      }
+
+      .closed-valve {
+        background-color: red; /* Color for closed valves */
+      }
+
+      .blocked {
+        background-color: black; /* Blocked paths marked in black */
+      }
+
+      input {
+        margin: 10px;
       }
     </style>
   </head>
   <body>
-    <div class="box">
-      <p>
-        Lorem ipsum dolor sit amet, consectetur adipiscing elit. Nulla vitae
-        eros at turpis feugiat dapibus. Sed nec eros non nisi varius ultricies.
-        In hac habitasse platea dictumst. Integer tristique semper quam, vel
-        consectetur erat pharetra nec. Vestibulum in lacus eget lorem euismod
-        lacinia. Aenean venenatis velit non purus lacinia, a elementum elit
-        ultrices. Aliquam erat volutpat.
-      </p>
+    <h1>Water Distribution Pipeline Simulation</h1>
+    <div id="grid-container"></div>
+
+    <div>
+      <label for="endX">End X (Row): </label>
+      <input type="number" id="endX" min="0" value="9" />
+      <label for="endY">End Y (Column): </label>
+      <input type="number" id="endY" min="0" value="9" />
+      <button onclick="findPath()">Find Shortest Path</button>
+      <button onclick="closeValves()">Close Valves</button>
+      <!-- New Button -->
     </div>
+
+    <script>
+      const gridContainer = document.getElementById("grid-container");
+
+      // Define the pipeline network (1 = pipe, 0 = no pipe)
+      const pipelineNetwork = [
+        [1, 0, 1, 1, 1, 0, 0, 1, 1, 1],
+        [1, 1, 1, 0, 1, 1, 0, 0, 0, 1],
+        [0, 0, 1, 0, 1, 0, 0, 1, 1, 1],
+        [1, 1, 0, 0, 1, 1, 1, 0, 0, 0],
+        [1, 1, 1, 1, 1, 0, 0, 0, 1, 1],
+        [0, 0, 0, 0, 1, 1, 1, 1, 1, 0],
+        [1, 1, 1, 0, 0, 0, 0, 1, 1, 1],
+        [1, 1, 0, 0, 1, 1, 1, 0, 0, 1],
+        [0, 1, 1, 1, 1, 0, 0, 1, 1, 1],
+        [1, 1, 1, 0, 1, 1, 0, 1, 0, 1],
+      ];
+
+      const ROWS = pipelineNetwork.length;
+      const COLS = pipelineNetwork[0].length;
+      let shortestPath = []; // To store the shortest path found by A*
+
+      // Create the grid UI
+      function createGrid() {
+        for (let i = 0; i < ROWS; i++) {
+          for (let j = 0; j < COLS; j++) {
+            const box = document.createElement("div");
+            box.classList.add("grid-box");
+            box.id = `box-${i}-${j}`;
+            if (pipelineNetwork[i][j] === 1) {
+              box.classList.add("pipe");
+            } else {
+              box.classList.add("no-pipe");
+            }
+            gridContainer.appendChild(box);
+          }
+        }
+      }
+
+      // A* Algorithm to find the shortest path
+      function findPath() {
+        resetGrid(); // Reset the grid colors
+        const start = { x: 0, y: 0 }; // Starting point (0,0)
+        const end = {
+          x: parseInt(document.getElementById("endX").value),
+          y: parseInt(document.getElementById("endY").value),
+        };
+
+        shortestPath = aStar(start, end);
+        if (shortestPath) {
+          for (const cell of shortestPath) {
+            const box = document.getElementById(`box-${cell.x}-${cell.y}`);
+            box.classList.add("path");
+          }
+        }
+      }
+
+      // Heuristic function for A* (Manhattan distance)
+      function heuristic(a, b) {
+        return Math.abs(a.x - b.x) + Math.abs(a.y - b.y);
+      }
+
+      // A* search algorithm implementation
+      function aStar(start, end) {
+        const openSet = [start];
+        const cameFrom = {};
+        const gScore = Array.from(Array(ROWS), () =>
+          Array(COLS).fill(Infinity)
+        );
+        const fScore = Array.from(Array(ROWS), () =>
+          Array(COLS).fill(Infinity)
+        );
+
+        gScore[start.x][start.y] = 0;
+        fScore[start.x][start.y] = heuristic(start, end);
+
+        while (openSet.length > 0) {
+          openSet.sort((a, b) => fScore[a.x][a.y] - fScore[b.x][b.y]);
+          const current = openSet.shift();
+
+          // If we reach the end
+          if (current.x === end.x && current.y === end.y) {
+            return reconstructPath(cameFrom, current);
+          }
+
+          const neighbors = getNeighbors(current);
+          for (const neighbor of neighbors) {
+            const tentativeGScore = gScore[current.x][current.y] + 1;
+
+            if (tentativeGScore < gScore[neighbor.x][neighbor.y]) {
+              cameFrom[`${neighbor.x},${neighbor.y}`] = current;
+              gScore[neighbor.x][neighbor.y] = tentativeGScore;
+              fScore[neighbor.x][neighbor.y] =
+                tentativeGScore + heuristic(neighbor, end);
+
+              if (
+                !openSet.some((n) => n.x === neighbor.x && n.y === neighbor.y)
+              ) {
+                openSet.push(neighbor);
+              }
+            }
+          }
+        }
+        return null;
+      }
+
+      // Get the neighbors (only horizontal and vertical movement allowed)
+      function getNeighbors(cell) {
+        const { x, y } = cell;
+        const neighbors = [];
+
+        if (x > 0 && pipelineNetwork[x - 1][y] === 1)
+          neighbors.push({ x: x - 1, y });
+        if (x < ROWS - 1 && pipelineNetwork[x + 1][y] === 1)
+          neighbors.push({ x: x + 1, y });
+        if (y > 0 && pipelineNetwork[x][y - 1] === 1)
+          neighbors.push({ x, y: y - 1 });
+        if (y < COLS - 1 && pipelineNetwork[x][y + 1] === 1)
+          neighbors.push({ x, y: y + 1 });
+
+        return neighbors;
+      }
+
+      // Reconstruct the path
+      function reconstructPath(cameFrom, current) {
+        const totalPath = [current];
+        while (`${current.x},${current.y}` in cameFrom) {
+          current = cameFrom[`${current.x},${current.y}`];
+          totalPath.unshift(current);
+        }
+        return totalPath;
+      }
+
+      // Close valves and block other paths
+      // Close only the valves adjacent to the determined path
+      function closeValves() {
+        if (shortestPath.length === 0) {
+          alert("Find a path first!");
+          return;
+        }
+
+        // For each cell in the shortest path, find its neighbors and close those valves
+        for (const cell of shortestPath) {
+          const neighbors = getNeighbors(cell); // Get adjacent neighbors of the current path cell
+          for (const neighbor of neighbors) {
+            // If the neighbor is a pipe and is not part of the shortest path, mark it as a closed valve
+            if (!isInPath(neighbor.x, neighbor.y)) {
+              const box = document.getElementById(
+                `box-${neighbor.x}-${neighbor.y}`
+              );
+              box.classList.add("closed-valve"); // Mark adjacent valves
+            }
+          }
+        }
+      }
+
+      // Check if the cell is part of the shortest path
+      function isInPath(x, y) {
+        return shortestPath.some((cell) => cell.x === x && cell.y === y);
+      }
+
+      // Reset the grid (unchanged)
+      function resetGrid() {
+        const boxes = document.querySelectorAll(".grid-box");
+        boxes.forEach((box) => {
+          box.classList.remove("path", "closed-valve", "blocked");
+          const [row, col] = box.id.split("-").slice(1).map(Number);
+          if (pipelineNetwork[row][col] === 1) {
+            box.classList.add("pipe");
+          } else {
+            box.classList.add("no-pipe");
+          }
+        });
+      }
+
+      // Other parts of the script (unchanged)
+
+      // Initialize the grid when the page loads
+      createGrid();
+    </script>
   </body>
 </html>
